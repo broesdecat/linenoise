@@ -191,8 +191,8 @@ void linenoiseHistoryFree(void) {
     }
 }
 
-bool shouldTerminate = false;
-bool requestedInteractiveTermination(){
+int shouldTerminate = 0;
+int requestedInteractiveTermination(){
 	return shouldTerminate;
 }
 
@@ -990,7 +990,7 @@ process_char:
             }
             break;
         case ctrl('D'):     /* ctrl-d */
-			shouldTerminate = true;
+			shouldTerminate = 1;
 			return -1;
 //            if (current->len == 0) {
 //                /* Empty line, so EOF */
@@ -1227,7 +1227,7 @@ process_char:
 
 char *linenoise(const char *prompt)
 {
-	shouldTerminate = false;
+	shouldTerminate = 0;
 	if(requestedInteractiveTermination()){
 		return NULL;
 	}
