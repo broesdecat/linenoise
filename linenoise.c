@@ -102,18 +102,28 @@
  * This support based in part on work by Jon Griffiths.
  */
 
-#ifdef __MINGW32__
+#ifdef _WIN32 /* Windows platform, either MinGW or Visual Studio (MSVC) */
 #include <windows.h>
 #include <fcntl.h>
 #define USE_WINCONSOLE
+#ifdef __MINGW32__
+#define HAVE_UNISTD_H
+#else
+/* Microsoft headers don't like old POSIX names */
+#define strdup _strdup
+#define snprintf _snprintf
+#endif
 #else
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/poll.h>
 #define USE_TERMIOS
+#define HAVE_UNISTD_H
 #endif
 
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -121,7 +131,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include "linenoise.h"
 #include "utf8.h"
@@ -532,7 +541,7 @@ static void clearScreen(struct current *current)
 
 static void cursorToLeft(struct current *current)
 {
-    COORD pos = { 0, current->y };
+    COORD pos = { 0, (SHORT)current->y };
     DWORD n;
 
     FillConsoleOutputAttribute(current->outh,
@@ -542,15 +551,17 @@ static void cursorToLeft(struct current *current)
 
 static int outputChars(struct current *current, const char *buf, int len)
 {
-    COORD pos = { current->x, current->y };
-    WriteConsoleOutputCharacter(current->outh, buf, len, pos, 0);
+    COORD pos = { (SHORT)current->x, (SHORT)current->y };
+    DWORD n;
+	
+    WriteConsoleOutputCharacter(current->outh, buf, len, pos, &n);
     current->x += len;
     return 0;
 }
 
 static void outputControlChar(struct current *current, char ch)
 {
-    COORD pos = { current->x, current->y };
+    COORD pos = { (SHORT)current->x, (SHORT)current->y };
     DWORD n;
 
     FillConsoleOutputAttribute(current->outh, BACKGROUND_INTENSITY, 2, pos, &n);
@@ -560,7 +571,7 @@ static void outputControlChar(struct current *current, char ch)
 
 static void eraseEol(struct current *current)
 {
-    COORD pos = { current->x, current->y };
+    COORD pos = { (SHORT)current->x, (SHORT)current->y };
     DWORD n;
 
     FillConsoleOutputCharacter(current->outh, ' ', current->cols - current->x, pos, &n);
@@ -568,7 +579,7 @@ static void eraseEol(struct current *current)
 
 static void setCursorPos(struct current *current, SHORT x)
 {
-    COORD pos = { x, current->y };
+    COORD pos = { (SHORT)x, (SHORT)current->y };
 
     SetConsoleCursorPosition(current->outh, pos);
     current->x = x;
