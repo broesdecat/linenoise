@@ -140,7 +140,7 @@ enum {
     SPECIAL_RIGHT = -23,
     SPECIAL_DELETE = -24,
     SPECIAL_HOME = -25,
-    SPECIAL_END = -26,
+    SPECIAL_END = -26
 };
 
 static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
@@ -162,10 +162,20 @@ struct current {
     HANDLE outh; /* Console output handle */
     HANDLE inh; /* Console input handle */
     int rows;   /* Screen rows */
-    int x;      /* Current column during output */
-    int y;      /* Current row */
+    SHORT x;      /* Current column during output */
+    SHORT y;      /* Current row */
 #endif
 };
+
+// NOTE: implemented ourselves, because no c++0x version in mingw
+//http://stackoverflow.com/questions/5573775/strdup-error-on-g-with-c0x
+char *my_strdup(const char *str) {
+    size_t len = strlen(str);
+    char *x = (char*)malloc(len+1); /* 1 for the null terminator */
+    if(!x) return NULL; /* malloc could not allocate memory */
+    memcpy(x,str,len+1); /* copy the string into the new buffer */
+    return x;
+}
 
 static int fd_read(struct current *current);
 static int getWindowSize(struct current *current);
@@ -179,6 +189,11 @@ void linenoiseHistoryFree(void) {
         free(history);
         history = NULL;
     }
+}
+
+bool shouldTerminate = false;
+bool requestedInteractiveTermination(){
+	return shouldTerminate;
 }
 
 #if defined(USE_TERMIOS)
@@ -551,7 +566,7 @@ static void eraseEol(struct current *current)
     FillConsoleOutputCharacter(current->outh, ' ', current->cols - current->x, pos, &n);
 }
 
-static void setCursorPos(struct current *current, int x)
+static void setCursorPos(struct current *current, SHORT x)
 {
     COORD pos = { x, current->y };
 
@@ -921,7 +936,7 @@ void linenoiseSetCompletionCallback(linenoiseCompletionCallback *fn) {
 
 void linenoiseAddCompletion(linenoiseCompletions *lc, const char *str) {
     lc->cvec = (char **)realloc(lc->cvec,sizeof(char*)*(lc->len+1));
-    lc->cvec[lc->len++] = strdup(str);
+    lc->cvec[lc->len++] = my_strdup(str);
 }
 
 #endif
@@ -975,13 +990,15 @@ process_char:
             }
             break;
         case ctrl('D'):     /* ctrl-d */
-            if (current->len == 0) {
-                /* Empty line, so EOF */
-                history_len--;
-                free(history[history_len]);
-                return -1;
-            }
-            /* Otherwise fall through to delete char to right of cursor */
+			shouldTerminate = true;
+			return -1;
+//            if (current->len == 0) {
+//                /* Empty line, so EOF */
+//                history_len--;
+//                free(history[history_len]);
+//                return -1;
+//            }
+//            /* Otherwise fall through to delete char to right of cursor */
         case SPECIAL_DELETE:
             if (remove_char(current, current->pos) == 1) {
                 refreshLine(current->prompt, current);
@@ -1155,7 +1172,7 @@ process_char:
                 /* Update the current history entry before to
                  * overwrite it with tne next one. */
                 free(history[history_len-1-history_index]);
-                history[history_len-1-history_index] = strdup(current->buf);
+                history[history_len-1-history_index] = my_strdup(current->buf);
                 /* Show the new entry */
                 history_index += dir;
                 if (history_index < 0) {
@@ -1210,6 +1227,11 @@ process_char:
 
 char *linenoise(const char *prompt)
 {
+	shouldTerminate = false;
+	if(requestedInteractiveTermination()){
+		return NULL;
+	}
+
     int count;
     struct current current;
     char buf[LINENOISE_MAX_LINE];
@@ -1242,7 +1264,7 @@ char *linenoise(const char *prompt)
             return NULL;
         }
     }
-    return strdup(buf);
+    return my_strdup(buf);
 }
 
 /* Using a circular buffer is smarter, but a bit more complex to handle. */
@@ -1261,7 +1283,7 @@ int linenoiseHistoryAdd(const char *line) {
         return 0;
     }
 
-    linecopy = strdup(line);
+    linecopy = my_strdup(line);
     if (!linecopy) return 0;
     if (history_len == history_max_len) {
         free(history[0]);
@@ -1324,6 +1346,32 @@ int linenoiseHistorySave(const char *filename) {
     fclose(fp);
     return 0;
 }
+
+int linenoiseHistoryAppend(const char *filename, const char* line) {
+    FILE *fp = fopen(filename,"a");
+
+    if (fp == NULL){
+    	return -1;
+    }
+
+	while (*line) {
+		if (*line == '\\') {
+			fputs("\\\\", fp);
+		}else if (*line == '\n') {
+			fputs("\\n", fp);
+		}else if (*line == '\r') {
+			fputs("\\r", fp);
+		}else {
+			fputc(*line, fp);
+		}
+		line++;
+	}
+	fputc('\n', fp);
+
+    fclose(fp);
+    return 0;
+}
+
 
 /* Load the history from the specified file. If the file does not exist
  * zero is returned and no operation is performed.
